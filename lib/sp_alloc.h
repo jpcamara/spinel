@@ -1286,6 +1286,8 @@ static inline sp_RbVal sp_box_bigint_or_nil(sp_Bigint *b) { return b ? sp_box_bi
    it does not (a checksum, an unpacked quad, a parsed literal on a 32-bit
    sp_int). What a package answers as :any for a value that may be wide. */
 sp_RbVal sp_box_i64(int64_t v);
+/* The same for an unsigned 64-bit value: a uint64_t past 2**63-1 */
+sp_RbVal sp_box_u64(uint64_t v);
 /* A proven Integer: its own box. A nil is out of band (sp_oint), so no word
    of an sp_int is reserved for it and the minimum word boxes as any other. */
 static inline sp_RbVal sp_box_int_nn(sp_int v) { return sp_box_int(v); }
@@ -1386,5 +1388,30 @@ const int64_t *sp_PolyArray_ffi_int_data(sp_PolyArray *a);
 const double *sp_PolyArray_ffi_float_data(sp_PolyArray *a);
 sp_int sp_array_kind_len(sp_RbVal el);
 sp_Class sp_unbox_class(sp_RbVal v);
+
+/* An ffi_func's integer return whose C type has values an sp_int cannot
+   hold (a uint32_t on a 32-bit target, a uint64_t or size_t on any, an
+   int64_t on a 32-bit target), narrowed to the Integer. A value past the
+   word raises RangeError rather than coming back as another number; wrap
+   mode keeps C's conversion. --int-overflow=promote boxes the value instead
+   (sp_box_u64 / sp_box_i64), so these are not reached there. */
+SP_NORETURN void sp_ffi_ret_range_u64(uint64_t v, const char *fn);
+SP_NORETURN void sp_ffi_ret_range_i64(int64_t v, const char *fn);
+static inline sp_int sp_ffi_ret_u64(uint64_t v, const char *fn) {
+#ifndef SP_INT_OVERFLOW_MODE_WRAP
+  if (SP_UNLIKELY(v > (uint64_t)INTPTR_MAX)) sp_ffi_ret_range_u64(v, fn);
+#else
+  (void)fn;
+#endif
+  return (sp_int)v;
+}
+static inline sp_int sp_ffi_ret_i64(int64_t v, const char *fn) {
+#ifndef SP_INT_OVERFLOW_MODE_WRAP
+  if (SP_UNLIKELY(v < (int64_t)INTPTR_MIN || v > (int64_t)INTPTR_MAX)) sp_ffi_ret_range_i64(v, fn);
+#else
+  (void)fn;
+#endif
+  return (sp_int)v;
+}
 
 #endif /* SP_ALLOC_H */

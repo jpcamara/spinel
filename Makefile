@@ -963,7 +963,8 @@ wasm-rt: $(SP_RT_WASI_LIB) $(BUNDLED_NATIVE_WASI_OBJS) $(SP_RT_WASI_NOEXC_LIB) $
 # under wasmtime (WASMTIME, default: the one on PATH) against their expected
 # output: exceptions (the sjlj lowering), regexps, floats, a Bignum, a
 # bundled package, a 32-bit Integer. Not in the gate: it needs the sdk and
-# an engine. `make wasm-test` where both are.
+# an engine. `make wasm-test` where both are. A promote_*.rb is built with
+# --int-overflow=promote, the mode its expected output is for.
 WASMTIME ?= wasmtime
 WASM_TESTS = $(shell grep -l '^\# spinel: wasm$$' test/*.rb)
 # --exceptions=abort: programs built without exception handling and run with
@@ -982,7 +983,8 @@ wasm-test: $(SPINEL) wasm-rt
 	tmp=$$(mktemp -d /tmp/spinel-wasm.XXXXXX); ok=1; \
 	for t in $(WASM_TESTS); do \
 	  bn=$$(basename $$t .rb); \
-	  if ! WASI_SDK=$(WASI_SDK) $(SPINEL) --target=wasm32-wasi --no-line-map $$t -o $$tmp/$$bn.wasm >/dev/null 2>$$tmp/$$bn.build; then \
+	  ov=; case $$bn in promote_*) ov=--int-overflow=promote;; esac; \
+	  if ! WASI_SDK=$(WASI_SDK) $(SPINEL) --target=wasm32-wasi --no-line-map $$ov $$t -o $$tmp/$$bn.wasm >/dev/null 2>$$tmp/$$bn.build; then \
 	    echo "wasm-test: FAIL (build) $$t"; head -3 $$tmp/$$bn.build; ok=0; continue; fi; \
 	  $(WASMTIME) run -W max-wasm-stack=16777216 --dir=. $$tmp/$$bn.wasm >$$tmp/$$bn.out 2>$$tmp/$$bn.err </dev/null; \
 	  if cmp -s $$tmp/$$bn.out $$t.expected; then echo "wasm-test: pass $$t"; \
@@ -1104,7 +1106,10 @@ endif
 # float_to_r_bounded and rational_string_overflow pin the closest Rational
 # that fits and the RangeError a Rational past the word answers outside
 # promote, where it is a big Rational (promote_rational_bignum).
-RAISE_MODE_PINS := test/float_to_r_bounded.rb test/rational_string_overflow.rb test/int_overflow_raises.rb test/int_overflow_op_assign.rb test/poly_int_overflow_raises.rb test/str_to_i_overflow.rb test/string_to_i_overflow_raises.rb test/bounded_counter_unchecked_add.rb test/float_to_int_out_of_range.rb test/bigrational_to_i_out_of_range.rb test/float_to_int_boundary.rb test/poly_call_legacy_abi_gate.rb test/poly_call_fast_abi_gate.rb test/poly_method_return_kinds.rb test/int_min_overflow_raises.rb test/masgn_boxed_ivar_slot_mismatch.rb test/array_index_sum_overflow.rb
+# ffi_int_return_past_word pins the RangeError an ffi_func integer return
+# past the word raises, which wrap gives as C's conversion and promote as
+# the Bignum (promote_ffi_int_return).
+RAISE_MODE_PINS := test/float_to_r_bounded.rb test/rational_string_overflow.rb test/int_overflow_raises.rb test/int_overflow_op_assign.rb test/poly_int_overflow_raises.rb test/str_to_i_overflow.rb test/string_to_i_overflow_raises.rb test/bounded_counter_unchecked_add.rb test/float_to_int_out_of_range.rb test/bigrational_to_i_out_of_range.rb test/float_to_int_boundary.rb test/poly_call_legacy_abi_gate.rb test/poly_call_fast_abi_gate.rb test/poly_method_return_kinds.rb test/int_min_overflow_raises.rb test/masgn_boxed_ivar_slot_mismatch.rb test/array_index_sum_overflow.rb test/ffi_int_return_past_word.rb
 # Tests a promote gap fails, out of the promote lane until it is fixed.
 PROMOTE_GAPS :=
 ifeq ($(SPINEL_INT_OVERFLOW),promote)

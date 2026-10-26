@@ -16,10 +16,18 @@ typedef struct {
   const char *spec;    /* the spec token */
   TyKind      ty;      /* inferred Ruby type of a value of this spec */
   const char *c_type;  /* C type at the ABI boundary */
+  int         bits;    /* an integer's width in bits; 0 is the target's word */
+  int         is_unsigned;
 } FfiSpecInfo;
 
 /* The row for `spec`, or NULL if the token is not part of the vocabulary. */
 const FfiSpecInfo *ffi_spec_lookup(const char *spec);
+
+/* Is `spec` a C integer type with values an `int_bits`-wide sp_int cannot
+   hold? A uint32_t on a 32-bit target is, a uint64_t or size_t on any; so
+   is an int64_t on a 32-bit target. A value of one coming back from C is
+   range-checked, or boxed under --int-overflow=promote, rather than cast. */
+int ffi_spec_int_exceeds(const char *spec, int int_bits);
 
 /* Does `spec` hand C a Ruby String's bytes (:str, :binstr, :string)? A
    String argument may be a heap String only the call holds. */
