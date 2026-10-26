@@ -963,7 +963,8 @@ wasm-rt: $(SP_RT_WASI_LIB) $(BUNDLED_NATIVE_WASI_OBJS) $(SP_RT_WASI_NOEXC_LIB) $
 # under wasmtime (WASMTIME, default: the one on PATH) against their expected
 # output: exceptions (the sjlj lowering), regexps, floats, a Bignum, a
 # bundled package, a 32-bit Integer. Not in the gate: it needs the sdk and
-# an engine. `make wasm-test` where both are.
+# an engine. `make wasm-test` where both are. A program built under another
+# Integer overflow mode names it (`# spinel: wasm-int-overflow: promote`).
 WASMTIME ?= wasmtime
 WASM_TESTS = $(shell grep -l '^\# spinel: wasm$$' test/*.rb)
 # --exceptions=abort: programs built without exception handling and run with
@@ -982,7 +983,8 @@ wasm-test: $(SPINEL) wasm-rt
 	tmp=$$(mktemp -d /tmp/spinel-wasm.XXXXXX); ok=1; \
 	for t in $(WASM_TESTS); do \
 	  bn=$$(basename $$t .rb); \
-	  if ! WASI_SDK=$(WASI_SDK) $(SPINEL) --target=wasm32-wasi --no-line-map $$t -o $$tmp/$$bn.wasm >/dev/null 2>$$tmp/$$bn.build; then \
+	  ov=$$(sed -n 's/^# spinel: wasm-int-overflow: //p' $$t); \
+	  if ! WASI_SDK=$(WASI_SDK) $(SPINEL) --target=wasm32-wasi $${ov:+--int-overflow=$$ov} --no-line-map $$t -o $$tmp/$$bn.wasm >/dev/null 2>$$tmp/$$bn.build; then \
 	    echo "wasm-test: FAIL (build) $$t"; head -3 $$tmp/$$bn.build; ok=0; continue; fi; \
 	  $(WASMTIME) run -W max-wasm-stack=16777216 --dir=. $$tmp/$$bn.wasm >$$tmp/$$bn.out 2>$$tmp/$$bn.err </dev/null; \
 	  if cmp -s $$tmp/$$bn.out $$t.expected; then echo "wasm-test: pass $$t"; \

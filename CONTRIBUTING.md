@@ -137,8 +137,10 @@ and coercions; not every handwritten argument or element store uses it.
     runs it with the minor mark off, on, and under the generational verifier
     with GC stress, and `# spinel: gc-stress` runs stress level 2 with and
     without the full verifier. Use one line per marker.
-    `# spinel: wasm` selects the WASI smoke tests; `# spinel: decisions`
-    selects the decision checks. In `test/wasm_abort/`, `# spinel: wasm-abort`
+    `# spinel: wasm` selects the WASI smoke tests, and
+    `# spinel: wasm-int-overflow: MODE` builds one of them under that
+    `--int-overflow` mode; `# spinel: decisions` selects the decision checks.
+    In `test/wasm_abort/`, `# spinel: wasm-abort`
     selects a program built with `--exceptions=abort`,
     `# spinel: wasm-abort-raises: MESSAGE` the message its raise traps with,
     and `# spinel: wasm-abort-refuse: REASON` the words of its refusal.

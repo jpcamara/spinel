@@ -9219,7 +9219,13 @@ static int str_arms_pattern(Compiler *c, int id, Buf *b, const NodeTable *nt, co
    (2**63 - 1 + 1, |-2**63|, a power), so the boxed helper answers it, ahead
    of the rows that compute in sp_int. Answers 1 when it emitted. */
 static int int_arms_promote(Compiler *c, int id, Buf *b, const char *name, int argc, const int *argv, const char *r) {
-  if (!g_promote_mode || repr_of(c, id).kind != RK_BOXED) return 0;
+  if (!g_promote_mode) return 0;
+  /* a constant pair whose power passes the word was typed the Bignum it is,
+     as `**`'s is: the sp_int row below wrote it into an sp_Bigint * */
+  if (sp_streq(name, "pow") && argc == 1 && repr_of(c, id).big) {
+    buf_printf(b, "sp_bigint_pow(sp_bigint_new_int(%s), (int64_t)(", r); emit_int_expr(c, argv[0], b); buf_puts(b, "))"); return 1;
+  }
+  if (repr_of(c, id).kind != RK_BOXED) return 0;
   if (argc == 0 && (sp_streq(name, "succ") || sp_streq(name, "next"))) { buf_printf(b, "sp_poly_succ_m(sp_box_int(%s), 0)", r); return 1; }
   if (argc == 0 && sp_streq(name, "pred")) { buf_printf(b, "sp_poly_int_pred(sp_box_int(%s))", r); return 1; }
   if (argc == 0 && (sp_streq(name, "abs") || sp_streq(name, "magnitude"))) { buf_printf(b, "sp_poly_abs(sp_box_int(%s))", r); return 1; }
