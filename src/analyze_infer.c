@@ -1744,6 +1744,17 @@ static int poly_index_int_array(Compiler *c, int id) {
   return ivar_array_elems_all_int_array(c, cid, ivname);
 }
 
+/* The ends of the target's sp_int. Its width is the C compiler's that builds
+   the program (main.c sets sp_target_int_bits), not this compiler's own: a
+   wasm32 program built on a 64-bit host has a 32-bit Integer, which a
+   constant judged against intptr_t here can pass (`127 << 28`). */
+extern int sp_target_int_bits;
+static long long infer_sp_int_max(void) { return sp_target_int_bits == 32 ? (long long)INT32_MAX : LLONG_MAX; }
+static long long infer_sp_int_min(void) { return sp_target_int_bits == 32 ? (long long)INT32_MIN : LLONG_MIN; }
+/* a long long result that is also an sp_int's (the overflow builtins: a
+   32-bit build of the compiler has no __int128) */
+static int infer_fits_sp_int(long long v) { return v <= infer_sp_int_max() && v >= infer_sp_int_min(); }
+
 /* A plain int literal value (not an out-of-int64 bigint literal). */
 static int infer_const_int_node(const NodeTable *nt, int id, long long *out) {
   NodeKind k = nt_kind(nt, id);
@@ -1768,29 +1779,31 @@ int an_unit_int_literal(const NodeTable *nt, int id) {
   return (int)v;
 }
 
-/* Whether base**exp does not fit in signed 64 bits (so it must be a Bignum). */
+/* Whether base**exp does not fit in an sp_int (so it must be a Bignum). */
 static int infer_int_pow_overflows(long long base, long long exp) {
   if (exp <= 0) return 0;
   if (base >= -1 && base <= 1) return 0;
   long long r = 1;
   for (long long i = 0; i < exp; i++)
-    if (__builtin_mul_overflow(r, base, &r)) return 1;
+    if (__builtin_mul_overflow(r, base, &r) || !infer_fits_sp_int(r)) return 1;
   return 0;
 }
 
-/* Whether base << amount does not fit in signed 64 bits (a Bignum in CRuby --
-   `1 << 64` is 2**64, not a wrapped/UB C shift). */
+/* Whether base << amount does not fit in an sp_int (a Bignum in CRuby --
+   `1 << 64` is 2**64, not a wrapped/UB C shift; `127 << 28` is one on a
+   32-bit target). */
 static int infer_int_shl_overflows(long long base, long long amount) {
   if (base == 0 || amount <= 0) return 0;
+  const int w = sp_target_int_bits;
   long long r = base;
   for (long long i = 0; i < amount; i++)
-    if (__builtin_mul_overflow(r, 2, &r)) {
-      /* a product that lands exactly on 2**63 (`1 << 63`, `3 << 62`'s does
-         not) has the bit pattern of -2**63, which is an sp_int: in raise
+    if (__builtin_mul_overflow(r, 2, &r) || !infer_fits_sp_int(r)) {
+      /* a product that lands exactly on 2**(w-1) (`1 << 63`, `3 << 62`'s does
+         not) has the bit pattern of -2**(w-1), which is an sp_int: in raise
          mode the runtime helper raises its RangeError, in wrap mode the
-         value is -2**63. Only promote mode keeps the Bignum. */
-      if (!g_promote_mode && amount < 64 && base > 0 &&
-          (unsigned long long)base == (1ULL << (63 - amount)))
+         value is -2**(w-1). Only promote mode keeps the Bignum. */
+      if (!g_promote_mode && amount < w && base > 0 &&
+          (unsigned long long)base == (1ULL << (w - 1 - amount)))
         return 0;
       return 1;
     }
@@ -5275,7 +5288,7 @@ static int infer_int_float_recv_call(Compiler *c, int id, const NodeTable *nt, c
       long long pr;
       int exact = infer_const_int_node(nt, recv, &pr) &&
                   ((sp_streq(name, "pred") || sp_streq(name, "abs") || sp_streq(name, "magnitude"))
-                     ? pr != (long long)INTPTR_MIN : pr != (long long)INTPTR_MAX);
+                     ? pr != infer_sp_int_min() : pr != infer_sp_int_max());
       if (!exact) { *out = TY_POLY; return 1; }
     }
     /* --int-overflow=promote: -2**63.divmod(-1) is [2**63, 0], past the
@@ -5447,18 +5460,19 @@ static int infer_operator_call(Compiler *c, int id, const NodeTable *nt, const c
         if (!(infer_const_int_node(nt, recv, &pa) && infer_const_int_node(nt, argv[0], &pb)))
           { *out = TY_POLY; return 1; }
         if (sp_streq(name, "/") || sp_streq(name, "div")) {
-          if (pb == -1 && pa == (long long)INTPTR_MIN) { *out = TY_POLY; return 1; }
+          if (pb == -1 && pa == infer_sp_int_min()) { *out = TY_POLY; return 1; }
           *out = TY_INT; return 1;
         }
         /* Two constants escape the word too when their result does: `max + 1`
-           was typed sp_int and took the raising helper (#4968). Judged in
-           intptr_t, sp_int's own type in the compiler that emits for it. */
-        intptr_t ia = (intptr_t)pa, ib = (intptr_t)pb, ir;
-        if ((long long)ia != pa || (long long)ib != pb) { *out = TY_POLY; return 1; }
-        int ovf = sp_streq(name, "+") ? __builtin_add_overflow(ia, ib, &ir)
-                : sp_streq(name, "-") ? __builtin_sub_overflow(ia, ib, &ir)
-                : __builtin_mul_overflow(ia, ib, &ir);
-        if (ovf) { *out = TY_POLY; return 1; }
+           was typed sp_int and took the raising helper (#4968). Judged at the
+           target's width, which a wasm32 program does not share with the
+           compiler that emits for it. */
+        if (!infer_fits_sp_int(pa) || !infer_fits_sp_int(pb)) { *out = TY_POLY; return 1; }
+        long long ir;
+        int ovf = sp_streq(name, "+") ? __builtin_add_overflow(pa, pb, &ir)
+                : sp_streq(name, "-") ? __builtin_sub_overflow(pa, pb, &ir)
+                : __builtin_mul_overflow(pa, pb, &ir);
+        if (ovf || !infer_fits_sp_int(ir)) { *out = TY_POLY; return 1; }
       }
       { *out = TY_INT; return 1; }
     }
@@ -8253,9 +8267,6 @@ static TyKind infer_symbol_call(Compiler *c, int id, const NodeTable *nt, const 
 static int promote_red_const(const NodeTable *nt, int n, long long *v) {
   return n >= 0 && nt_kind(nt, n) == NK_IntegerNode && infer_const_int_node(nt, n, v);
 }
-/* a long long result that is also an sp_int's (the overflow builtins: a
-   32-bit build of the compiler has no __int128) */
-static int prf_word(long long v) { return v <= (long long)INTPTR_MAX && v >= (long long)INTPTR_MIN; }
 static int promote_red_fits(Compiler *c, int recv, int is_mul, int seed, int has_seed) {
   const NodeTable *nt = c->nt;
   int rn = nt_paren_single(nt, recv);
@@ -8268,7 +8279,7 @@ static int promote_red_fits(Compiler *c, int recv, int is_mul, int seed, int has
       long long v; if (!promote_red_const(nt, el[i], &v)) return 0;
       if (first) { acc = v; first = 0; }
       else if (is_mul ? __builtin_mul_overflow(acc, v, &acc) : __builtin_add_overflow(acc, v, &acc)) return 0;
-      if (!prf_word(acc)) return 0;
+      if (!infer_fits_sp_int(acc)) return 0;
     }
     return 1;
   }
@@ -8286,7 +8297,7 @@ static int promote_red_fits(Compiler *c, int recv, int is_mul, int seed, int has
         return 0;
       if (__builtin_add_overflow(acc, tri, &acc)) return 0;
     }
-    return prf_word(acc);
+    return infer_fits_sp_int(acc);
   }
   return 0;
 }
@@ -8306,7 +8317,7 @@ static int infer_promote_reducer(Compiler *c, int id, TyKind rt, TyKind *out) {
     if (rn >= 0 && nt_kind(nt, rn) == NK_RangeNode &&
         promote_red_const(nt, nt_ref(nt, rn, "left"), &lo) &&
         promote_red_const(nt, nt_ref(nt, rn, "right"), &hi) &&
-        ({ long long d; !__builtin_sub_overflow(hi, lo, &d) && d < (long long)INTPTR_MAX; })) return 0;
+        ({ long long d; !__builtin_sub_overflow(hi, lo, &d) && d < infer_sp_int_max(); })) return 0;
     /* an endless literal's count is Infinity, typed by the Range rules */
     if (rn >= 0 && nt_kind(nt, rn) == NK_RangeNode &&
         (nt_ref(nt, rn, "left") < 0 || nt_ref(nt, rn, "right") < 0)) return 0;
