@@ -1,0 +1,6 @@
+2147483647
+42
+integer 18446744073709551615 returned by M.u64_max is out of Integer range (--int-overflow=promote returns it as a Bignum)
+true
+true
+true

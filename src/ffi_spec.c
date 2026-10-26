@@ -4,18 +4,19 @@
 
 /* The single source of truth for the FFI type-spec vocabulary. Each row pairs a
  * spec token with its inferred Ruby type and its C type at the ABI boundary;
- * ffi_spec_to_ty and ffi_c_type are thin lookups into it. LP64 target. */
+ * ffi_spec_to_ty and ffi_c_type are thin lookups into it. LP64 target. An
+ * integer row also gives its width and sign (ffi_spec_int_exceeds). */
 static const FfiSpecInfo FFI_SPECS[] = {
-  { "int",         TY_INT,         "int"             },
-  { "uint32",      TY_INT,         "uint32_t"        },
-  { "int32",       TY_INT,         "int32_t"         },
-  { "uint16",      TY_INT,         "uint16_t"        },
-  { "int16",       TY_INT,         "int16_t"         },
-  { "uint8",       TY_INT,         "uint8_t"         },
-  { "int8",        TY_INT,         "int8_t"          },
-  { "size_t",      TY_INT,         "size_t"          },
-  { "long",        TY_INT,         "long"            },
-  { "int64",       TY_INT,         "int64_t"         },
+  { "int",         TY_INT,         "int",            32, 0 },
+  { "uint32",      TY_INT,         "uint32_t",       32, 1 },
+  { "int32",       TY_INT,         "int32_t",        32, 0 },
+  { "uint16",      TY_INT,         "uint16_t",       16, 1 },
+  { "int16",       TY_INT,         "int16_t",        16, 0 },
+  { "uint8",       TY_INT,         "uint8_t",         8, 1 },
+  { "int8",        TY_INT,         "int8_t",          8, 0 },
+  { "size_t",      TY_INT,         "size_t",          0, 1 },
+  { "long",        TY_INT,         "long",            0, 0 },
+  { "int64",       TY_INT,         "int64_t",        64, 0 },
   { "float",       TY_FLOAT,       "float"           },
   { "double",      TY_FLOAT,       "double"          },
   /* _Bool, NOT int: a C function declared to return `bool` writes one byte
@@ -37,15 +38,15 @@ static const FfiSpecInfo FFI_SPECS[] = {
   { "buffer_in",   TY_POLY,        "void *"          },
   { "buffer_out",  TY_POLY,        "void *"          },
   { "buffer_inout",TY_POLY,        "void *"          },
-  { "char",        TY_INT,         "int8_t"          },
-  { "uchar",       TY_INT,         "uint8_t"         },
-  { "short",       TY_INT,         "int16_t"         },
-  { "ushort",      TY_INT,         "uint16_t"        },
-  { "uint",        TY_INT,         "uint32_t"        },
-  { "ulong",       TY_INT,         "unsigned long"   },
-  { "long_long",   TY_INT,         "int64_t"         },
-  { "ulong_long",  TY_INT,         "uint64_t"        },
-  { "uint64",      TY_INT,         "uint64_t"        },
+  { "char",        TY_INT,         "int8_t",          8, 0 },
+  { "uchar",       TY_INT,         "uint8_t",         8, 1 },
+  { "short",       TY_INT,         "int16_t",        16, 0 },
+  { "ushort",      TY_INT,         "uint16_t",       16, 1 },
+  { "uint",        TY_INT,         "uint32_t",       32, 1 },
+  { "ulong",       TY_INT,         "unsigned long",   0, 1 },
+  { "long_long",   TY_INT,         "int64_t",        64, 0 },
+  { "ulong_long",  TY_INT,         "uint64_t",       64, 1 },
+  { "uint64",      TY_INT,         "uint64_t",       64, 1 },
 };
 
 /* The `ffi_read_*` / `ffi_write_*` suffixes. A separate vocabulary from the
@@ -58,6 +59,13 @@ static const struct { const char *kind; const char *c_type; int width; } FFI_SCA
   { "u32", "uint32_t", 4 }, { "i32", "int32_t", 4 },
   { "u64", "uint64_t", 8 }, { "i64", "int64_t", 8 },
 };
+
+int ffi_spec_int_exceeds(const char *spec, int int_bits) {
+  const FfiSpecInfo *info = ffi_spec_lookup(spec);
+  if (!info || info->ty != TY_INT) return 0;
+  int w = info->bits ? info->bits : int_bits;
+  return info->is_unsigned ? w >= int_bits : w > int_bits;
+}
 
 int ffi_spec_is_str(const char *spec) {
   const FfiSpecInfo *info = ffi_spec_lookup(spec);

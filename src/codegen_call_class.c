@@ -1995,8 +1995,23 @@ int emit_call_cmethod_arms(Compiler *c, int id, Buf *b, const NodeTable *nt, con
         else {
           /* numeric / bool: cast to sp_int or sp_float */
           int ffi_ret_is_float = (sp_streq(ret_spec, "float") || sp_streq(ret_spec, "double"));
+          extern int sp_target_int_bits;
           if (ffi_ret_is_float) {
             buf_puts(b, "((sp_float)("); buf_puts(b, call_buf.p); buf_puts(b, "))");
+          }
+          else if (ffi_spec_int_exceeds(ret_spec, sp_target_int_bits)) {
+            /* A C integer an sp_int cannot hold (a uint32_t on a 32-bit
+               target, a uint64_t anywhere): the cast answered 3000000000 as
+               -1294967296. Promote boxes it, a Bignum when it does not fit,
+               as the analysis typed the call; the other modes narrow it
+               through a range check (RangeError, or the C wrap under wrap). */
+            int uns = ffi_spec_lookup(ret_spec)->is_unsigned;
+            if (g_promote_mode)
+              buf_printf(b, "%s((%s)(%s))", uns ? "sp_box_u64" : "sp_box_i64",
+                         uns ? "uint64_t" : "int64_t", call_buf.p);
+            else
+              buf_printf(b, "%s((%s)(%s), \"%s.%s\")", uns ? "sp_ffi_ret_u64" : "sp_ffi_ret_i64",
+                         uns ? "uint64_t" : "int64_t", call_buf.p, rcmod, name);
           }
           else {
             buf_puts(b, "((sp_int)("); buf_puts(b, call_buf.p); buf_puts(b, "))");

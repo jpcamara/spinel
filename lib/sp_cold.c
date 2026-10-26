@@ -5247,6 +5247,22 @@ sp_RbVal sp_box_i64(int64_t v) {
   if (v >= (int64_t)INTPTR_MIN && v <= (int64_t)INTPTR_MAX) return sp_box_int((sp_int)v);
   return sp_box_bigint(sp_bigint_new_int(v));
 }
+sp_Bigint *sp_bigint_new_u64(uint64_t v);
+sp_RbVal sp_box_u64(uint64_t v) {
+  if (v > (uint64_t)INT64_MAX) return sp_box_bigint(sp_bigint_new_u64(v));
+  return sp_box_i64((int64_t)v);
+}
+/* An FFI integer return past sp_int, outside --int-overflow=promote */
+SP_NORETURN void sp_ffi_ret_range_u64(uint64_t v, const char *fn) {
+  sp_raise_cls("RangeError", sp_sprintf("integer %llu returned by %s is out of Integer range "
+                                        "(--int-overflow=promote returns it as a Bignum)",
+                                        (unsigned long long)v, fn));
+}
+SP_NORETURN void sp_ffi_ret_range_i64(int64_t v, const char *fn) {
+  sp_raise_cls("RangeError", sp_sprintf("integer %lld returned by %s is out of Integer range "
+                                        "(--int-overflow=promote returns it as a Bignum)",
+                                        (long long)v, fn));
+}
 sp_RbVal sp_box_encoding(sp_Encoding e) { sp_RbVal r; r.tag = SP_TAG_ENCODING; r.cls_id = 0; r.v.s = sp_encoding_name(e); return r; }
 /* Encoding.find(name) with a name known at run time: an Encoding answers
    itself, a name or alias the encoding it names (case-insensitively, as

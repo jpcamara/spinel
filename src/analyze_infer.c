@@ -6042,7 +6042,15 @@ static int infer_class_module_call(Compiler *c, int id, const NodeTable *nt, con
           { *out = native_spec_to_ty(c->native_funcs[nvi].ret); return 1; }
       }
       int fi = ffi_find_func(c, rcmod, name);
-      if (fi >= 0) { *out = ffi_spec_to_ty(c->ffi_funcs[fi].ret); return 1; }
+      if (fi >= 0) {
+        /* --int-overflow=promote: a C integer return an sp_int cannot hold
+           (a uint32_t on a 32-bit target, a uint64_t) is boxed, a Bignum
+           when it does not fit; the other modes range-check the cast */
+        extern int sp_target_int_bits;
+        if (g_promote_mode && ffi_spec_int_exceeds(c->ffi_funcs[fi].ret, sp_target_int_bits))
+          { *out = TY_POLY; return 1; }
+        *out = ffi_spec_to_ty(c->ffi_funcs[fi].ret); return 1;
+      }
       /* ffi_buffer: Module.buf_name returns the static char* (ptr type -> TY_POLY) */
       if (ffi_find_buf(c, rcmod, name) >= 0) { *out = TY_POLY; return 1; }
       /* ffi_read_*: Module.reader_name(buf) returns int or ptr */

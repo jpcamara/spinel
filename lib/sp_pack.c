@@ -314,15 +314,11 @@ int64_t sp_bigint_to_int(sp_Bigint *b);  /* wraps mod 2^64, as pack does */
    otherwise (a 64-bit quantity on a 32-bit sp_int), as CRuby answers */
 #define pk_box_i64 sp_box_i64
 
-sp_Bigint *sp_bigint_new_u64(uint64_t v);
 sp_Bigint *sp_bigint_from_le_bytes(int negative, const unsigned char *bytes, size_t n);
 /* The same for an UNSIGNED 64-bit quantity, whose top half no int64 holds:
    `Q` above 2**63-1 is a Bignum in CRuby, and reading it as a signed value
    answered a negative number for every such byte pattern. */
-static sp_RbVal pk_box_u64(uint64_t v) {
-  if (v > (uint64_t)INT64_MAX) return sp_box_bigint(sp_bigint_new_u64(v));
-  return pk_box_i64((int64_t)v);
-}
+#define pk_box_u64 sp_box_u64
 
 /* A complete BER value fits a uint64 until its next seven-bit shift would
    overflow. Larger values use the existing magnitude-byte import in one

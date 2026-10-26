@@ -125,6 +125,14 @@ is declared goes through `sp_oint_arg`, which raises the
 `no implicit conversion from nil to integer` TypeError for nil and passes
 every other value, `INT64_MIN` included.
 
+An integer return whose C type has values `sp_int` cannot hold -- a
+`:uint64` or `:size_t` above `2**63 - 1`, and on a 32-bit target such as
+wasm32 a `:uint32`, `:size_t` or `:ulong` above `2**31 - 1` and an
+`:int64` outside 32 bits -- follows `--int-overflow`
+([int-overflow.md](int-overflow.md)): `raise` (the default) raises
+`RangeError`, `promote` returns the Bignum, and `wrap` keeps C's
+conversion to `sp_int`. Under `promote` such a call's value is boxed.
+
 The other direction, the C contract header `--ext-entry` emits for a
 kernel's exported methods (see [spin.md](spin.md)), spells a nullable
 Integer or Float -- a parameter the kernel is also called with `nil`, a

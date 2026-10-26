@@ -97,7 +97,12 @@ host the compiler runs on:
   is a `RangeError` when it does not fit.
 - `INT32_MIN` is an ordinary Integer there, as `INT64_MIN` is on 64-bit: the
   nil of an `Integer | nil` slot is a flag beside the word on both widths.
-- Known gap on 32-bit: FFI marshalling of 64-bit C types is not done.
+- An `ffi_func` integer return past the width (a `:uint32` above
+  `2**31 - 1`, an `:int64` outside 32 bits) raises `RangeError` under
+  `raise`, is the Bignum under `promote` and C's conversion under `wrap`,
+  as a `:uint64` above `2**63 - 1` is on 64-bit ([FFI.md](FFI.md)).
+  Known gap on 32-bit: the rest of FFI marshalling of 64-bit C types is
+  not done.
 
 For the developer: `make test-corpus SPINEL_INT_OVERFLOW=wrap` (or `promote`)
 runs the test corpus under that mode, and CI runs both on every push to
